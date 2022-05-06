@@ -50,6 +50,8 @@ glm::vec3 look_position = glm::vec3(0.0f, 0.0f, 0.0f);
 glm::vec3 camera_position = glm::vec3(0.0f, 0.0f, Magnification);
 glm::vec3 camera_direction = look_position - camera_position;
 
+// glm::vec3 plot_origin = glm::vec3(0.0f, 0.0f, 0.0f);
+
 float X_Offset = 0.0f;
 float Y_Offset = 0.0f;
 
@@ -132,11 +134,9 @@ int main()
 
     unsigned int basic_shader = CreateShaderProgram("BasicShader");
 
-    // glm::mat4 projection = glm::perspective(glm::radians(45.0f), Aspect_Ratio, 1.0f, 100.0f);
     glm::mat4 projection = glm::perspective(glm::radians(Fov), Aspect_Ratio, 0.1f, 1000.0f);
     glm::mat4 model(1.0f);
     glm::mat4 view(1.0f);
-    glm::vec3 eye(1.0f);
 
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_BLEND);
@@ -153,16 +153,18 @@ int main()
 
         model = glm::mat4(1.0f);
         view = glm::mat4(1.0f);
-        eye = glm::vec3(0.0f, 0.0f, Magnification);
-        float scale = glm::length(camera_direction) * tan(glm::radians(Fov));
+        view = glm::lookAt(camera_position, look_position, glm::vec3(0.0f, 1.0f, 0.0f));
+
+        float scale_x = Magnification * tan(glm::radians(Fov));
+        float scale_y = scale_x / Aspect_Ratio;
 
         BindShaderProgram(basic_shader);
 
         BindVertexArray(vao_lines);
-        // We don't want to change X & Y axes, thus we do not provide projection and view matrices for them
-        view = glm::lookAt(eye, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        // Drawing X axis
+        model = glm::mat4(1.0f);
         model = glm::translate(model, glm::vec3(0.0f, Y_Offset, 0.0f));
-        model = glm::scale(model, glm::vec3(scale, scale, 1.0f));
+        model = glm::scale(model, glm::vec3(scale_x, scale_x, 1.0f));
 
         SetUniformMat4(basic_shader, "uProjection", projection);
         SetUniformMat4(basic_shader, "uView", view);
@@ -170,60 +172,69 @@ int main()
         SetUniformVec4(basic_shader, "uColor", glm::vec4(0.5f, 0.5f, 0.5f, 1.0f));
         glDrawArrays(GL_LINES, 0, 2);
 
+        float iter = 1.0f + look_position.x + X_Offset;
+        while (iter < scale_x)
+        {
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(iter, Y_Offset, 0.0f));
+            model = glm::scale(model, glm::vec3(1.0f, 0.1f, 1.0f));
+
+            SetUniformMat4(basic_shader, "uModel", model);
+            glDrawArrays(GL_LINES, 2, 2);
+
+            iter += 1.0f;
+        }
+
+        iter = 1.0f + look_position.x + X_Offset;
+        while (iter > -scale_x)
+        {
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(iter, Y_Offset, 0.0f));
+            model = glm::scale(model, glm::vec3(1.0f, 0.1f, 1.0f));
+
+            SetUniformMat4(basic_shader, "uModel", model);
+            glDrawArrays(GL_LINES, 2, 2);
+
+            iter -= 1.0f;
+        }
+
+        // Draw Y axis
         model = glm::mat4(1.0f);
         model = glm::translate(model, glm::vec3(X_Offset, 0.0f, 0.0f));
-        model = glm::scale(model, glm::vec3(scale, scale, 1.0f));
+        model = glm::scale(model, glm::vec3(scale_y, scale_y, 1.0f));
 
         SetUniformMat4(basic_shader, "uModel", model);
         glDrawArrays(GL_LINES, 2, 2);
 
-        SetUniformMat4(basic_shader, "uProjection", projection);
-        SetUniformMat4(basic_shader, "uView", view);
-        BindVertexArray(vao_lines);
-
-        float iter = 1.0f;
-
-        do
+        iter = 1.0f + look_position.y + Y_Offset;
+        while (iter < scale_y)
         {
             model = glm::mat4(1.0f);
-            model = glm::translate(model, glm::vec3(iter + X_Offset, Y_Offset, 0.0f));
-            model = glm::scale(model, glm::vec3(1.0f, 0.1f, 1.0f));
-            SetUniformMat4(basic_shader, "uModel", model);
-            glDrawArrays(GL_LINES, 2, 2); // y
+            model = glm::translate(model, glm::vec3(X_Offset, iter, 0.0f));
+            model = glm::scale(model, glm::vec3(0.1f, 1.0f, 1.0f));
 
-            model = glm::mat4(1.0f);
-            model = glm::translate(model, glm::vec3(-iter + X_Offset, Y_Offset, 0.0f));
-            model = glm::scale(model, glm::vec3(1.0f, 0.1f, 1.0f));
             SetUniformMat4(basic_shader, "uModel", model);
-            glDrawArrays(GL_LINES, 2, 2); // y
+            glDrawArrays(GL_LINES, 0, 2);
 
             iter += 1.0f;
         }
-        while (iter <= glm::length(camera_direction) * tan(glm::radians(Fov)));
 
-        iter = 1.0f;
-
-        do
+        iter = 1.0f + look_position.y + Y_Offset;
+        while (iter > -scale_y)
         {
-            // X DELIMS -> so draw Y
             model = glm::mat4(1.0f);
-            model = glm::translate(model, glm::vec3(X_Offset, iter + Y_Offset, 0.0f));
+            model = glm::translate(model, glm::vec3(X_Offset, iter, 0.0f));
             model = glm::scale(model, glm::vec3(0.1f, 1.0f, 1.0f));
-            SetUniformMat4(basic_shader, "uModel", model);
-            glDrawArrays(GL_LINES, 0, 2); // x
 
-            model = glm::mat4(1.0f);
-            model = glm::translate(model, glm::vec3(X_Offset, -iter + Y_Offset, 0.0f));
-            model = glm::scale(model, glm::vec3(0.1f, 1.0f, 1.0f));
             SetUniformMat4(basic_shader, "uModel", model);
-            glDrawArrays(GL_LINES, 0, 2); // x
+            glDrawArrays(GL_LINES, 0, 2);
 
-            iter += 1.0f;
+            iter -= 1.0f;
         }
-        while (iter <= glm::length(camera_direction) * tan(glm::radians(Fov)) / Aspect_Ratio);
 
         BindVertexArray(graph_vao);
 
+        // Draw graph
         model = glm::mat4(1.0f);
         model = glm::translate(model, glm::vec3(X_Offset, Y_Offset, 0.0f));
         SetUniformMat4(basic_shader, "uModel", model);
@@ -237,12 +248,11 @@ int main()
         glfwGetWindowSize(Window, &Width, &Height);
         glViewport(0, 0, Width, Height);
 
+        // Update values each frame
+        // TODO replace with resize window callback
         Aspect_Ratio = static_cast<float>(Width) / Height;
-        
-        internal_height = GetFunctionExtremum(Function, Left_Border, Right_Border);
-        internal_width = internal_height * Aspect_Ratio;
+        // internal_width = internal_height * Aspect_Ratio;
 
-        look_position = glm::vec3(0.0f, 0.0f, 0.0f);
         camera_position = glm::vec3(0.0f, 0.0f, Magnification);
         camera_direction = look_position - camera_position;
     }
