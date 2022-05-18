@@ -11,12 +11,13 @@ file(GLOB_RECURSE
 
 add_executable(${PROJECT_NAME} Application.cpp ${GL_FONT})
 target_include_directories(${PROJECT_NAME}
-    PUBLIC "${GL_FONT}"
+    PUBLIC "dependencies/freetype-gl-cpp/"
     PUBLIC "${GLEW_INCLUDE_DIRS}"
     PUBLIC "${FREETYPE_INCLUDE_DIRS}"
     .
 )
 target_link_libraries(${PROJECT_NAME}
+    freetype-gl-cpp
     ${FREETYPE_LIBRARIES}
     glfw
     GLEW::GLEW

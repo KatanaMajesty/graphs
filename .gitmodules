@@ -4,6 +4,5 @@
 [submodule "dependencies/glm"]
 	path = dependencies/glm
 	url = https://github.com/g-truc/glm
-[submodule "dependencies/glfont"]
-	path = dependencies/glfont
-	url = https://github.com/jtberglund/GLFont
+
+

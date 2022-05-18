@@ -1,3 +1,5 @@
+#include <freetype-gl-cpp.h>
+
 #define LOG(logLevel, message) std::cout << #logLevel << ": " << message << std::endl
 #define PRECISION 2000
 
@@ -14,43 +16,47 @@ struct Vertex
     glm::vec2 position;
 };
 
+struct Line
+{
+    Vertex p1;
+    Vertex p2;
+};
+
 // FUCNTION DECLARATIONS
-void GLFWKeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
-void GLFWScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
-void FrameKeyCallback(GLFWwindow* window);
-unsigned int CreateBuffer();
-// program should be bound implicitly
-unsigned int CreateShaderProgram(const std::string& shader_name);
-void SetUniformMat4(unsigned int program, const char* name, const glm::mat4& mat);
-void SetUniformVec4(unsigned int program, const char* name, const glm::vec4& vec);          
-void BindShaderProgram(unsigned int program);
-void BindVertexArray(unsigned int vao);
+void            GLFWKeyCallback(    GLFWwindow* window, int key, int scancode, int action, int mods);
+void            GLFWScrollCallback( GLFWwindow* window, double xoffset, double yoffset);
+void            FrameKeyCallback(   GLFWwindow* window);
+unsigned int    CreateShaderProgram(const std::string& shader_name);
+void            SetUniformMat4(     unsigned int program, const char* name, const glm::mat4& mat);
+void            SetUniformVec4(     unsigned int program, const char* name, const glm::vec4& vec);          
+void            BindShaderProgram(  unsigned int program);
+void            BindVertexArray(    unsigned int vao);
+size_t          PushData(           size_t count, Vertex* data, size_t& offset);
+float Normalize(float x) { return x / fabs(x); }
 // Function
 constexpr float Function(float x);
 float GetFunctionExtremum(float(*func)(float), float left, float right);
+
+std::ostream& operator<<(std::ostream& stream, const glm::vec3& vec)
+{
+    stream << vec.x << ", " << vec.y << ", " << vec.z;
+    return stream;
+}
 
 // GLOBAL VARIABLES
 GLFWwindow* Window = nullptr;
 int Width = 1280;
 int Height = 720;
-// constexpr float Aspect_Ratio = static_cast<float>(Height) / Width;
+
 float Aspect_Ratio = static_cast<float>(Width) / Height;
-const char* Window_Title = "OpenGL Graph visualizer";
+
 constexpr float Left_Border = -5.0f;
 constexpr float Right_Border = 5.0f; 
 constexpr float Fov = 45.0f;
+constexpr size_t Data_Size = PRECISION + 256;
 
 float internal_height = GetFunctionExtremum(Function, Left_Border, Right_Border);
-float internal_width = internal_height * Aspect_Ratio;
-// the longest distance from origin to border
-float significant_border = fabs(Left_Border) > fabs(Right_Border) ? fabs(Left_Border) : fabs(Right_Border);
-float Magnification = internal_height * M_PI_2 * Aspect_Ratio;
-
-glm::vec3 look_position = glm::vec3(0.0f, 0.0f, 0.0f);
-glm::vec3 camera_position = glm::vec3(0.0f, 0.0f, Magnification);
-glm::vec3 camera_direction = look_position - camera_position;
-
-// glm::vec3 plot_origin = glm::vec3(0.0f, 0.0f, 0.0f);
+float Magnification = internal_height / tan(glm::radians(Fov)) * Aspect_Ratio + 0.1f;
 
 float X_Offset = 0.0f;
 float Y_Offset = 0.0f;
@@ -63,7 +69,7 @@ int main()
         return -1;
     }
 
-    Window = glfwCreateWindow(Width, Height, Window_Title, nullptr, nullptr);
+    Window = glfwCreateWindow(Width, Height, "Lab 17 AP", nullptr, nullptr);
     if (!Window)
     {
         LOG(CRITICAL, "Couldn't create a window");
@@ -87,59 +93,49 @@ int main()
     glfwSetKeyCallback(Window, GLFWKeyCallback);
     glfwSwapInterval(1);
 
-    // OPENGL DATA
-    unsigned int graph_vao;
-    glGenVertexArrays(1, &graph_vao);
-    glBindVertexArray(graph_vao);
-
     std::array<Vertex, PRECISION> graph_array;
-    float x = Left_Border;
+    // float x = Left_Border;
     float delta = (fabs(Left_Border) + fabs(Right_Border)) / graph_array.size();
-    std::generate(graph_array.begin(), graph_array.end(), [&]() -> Vertex {
+    std::generate(graph_array.begin(), graph_array.end(), [&, x = Left_Border]() mutable -> Vertex {
         float y = Function(x);
         x += delta;
         return {glm::vec2(x, y)};
     });
 
-    unsigned int graph_vbo;
-    glGenBuffers(1, &graph_vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, graph_vbo);
-    glNamedBufferData(graph_vbo, sizeof(Vertex) * graph_array.size(), graph_array.data(), GL_STATIC_DRAW);
+    // OPENGL DATA
 
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*) offsetof(Vertex, position));
+    FreetypeGl text_renderer(true);
+    text_renderer.setProjectionPresp(Fov, Aspect_Ratio, 0.1f, 1000.0f);
+    FreetypeGlText text = text_renderer.createText(std::string("Static text (faster)"));
+    text.setScalingFactor(2);
+
+
+    unsigned int vao;
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);
+
+    unsigned int vbo;
+    glGenBuffers(1, &vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex) * Data_Size, nullptr, GL_DYNAMIC_DRAW);
+
     glEnableVertexAttribArray(0);
-
-    unsigned int vao_lines;
-    glGenVertexArrays(1, &vao_lines);
-    glBindVertexArray(vao_lines);
-
-    std::array<Vertex, 4> lines_array = {
-        {
-            // X axis:
-            glm::vec2(1.0f,  0.0f),
-            glm::vec2(-1.0f, 0.0f),
-            // Y axis:
-            glm::vec2(0.0f, 1.0f),
-            glm::vec2(0.0f, -1.0f),
-        }
-    };
-
-    unsigned int vbo_lines;
-    glGenBuffers(1, &vbo_lines);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo_lines);
-    glNamedBufferData(vbo_lines, sizeof(Vertex) * lines_array.size(), lines_array.data(), GL_STATIC_DRAW);
-
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*) offsetof(Vertex, position));
-    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, position)));
 
     unsigned int basic_shader = CreateShaderProgram("BasicShader");
 
-    glm::mat4 projection = glm::perspective(glm::radians(Fov), Aspect_Ratio, 0.1f, 1000.0f);
-    glm::mat4 model(1.0f);
-    glm::mat4 view(1.0f);
+    glm::vec3 camera_position = glm::vec3(0.0f, 0.0f, Magnification);
+    glm::vec3 look_position = glm::vec3(0.0f);
+    glm::vec3 plot_origin = glm::vec3(0.0f);
+    glm::vec3 camera_direction = look_position - camera_position;
+    glm::vec3 to_origin = plot_origin - camera_position;
 
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glEnable(GL_BLEND);
+    glm::mat4 projection = glm::perspective(Fov, Aspect_Ratio, 0.1f, 1000.0f);
+    glm::mat4 view(1.0f);
+    glm::mat4 model(1.0f);
+
+    Line x = {glm::vec2(-1.0f, 0.0f), glm::vec2(1.0f, 0.0f)};
+    Line y = {glm::vec2(0.0f, 1.0), glm::vec2(0.0f, -1.0f)};
 
     // RENDER LOOP
     while (!glfwWindowShouldClose(Window))
@@ -151,96 +147,112 @@ int main()
 
         FrameKeyCallback(Window);
 
-        model = glm::mat4(1.0f);
-        view = glm::mat4(1.0f);
-        view = glm::lookAt(camera_position, look_position, glm::vec3(0.0f, 1.0f, 0.0f));
+        text_renderer.renderText(text);
 
-        float scale_x = Magnification * tan(glm::radians(Fov));
-        float scale_y = scale_x / Aspect_Ratio;
-
+        BindVertexArray(vao);
         BindShaderProgram(basic_shader);
 
-        BindVertexArray(vao_lines);
-        // Drawing X axis
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(0.0f, Y_Offset, 0.0f));
-        model = glm::scale(model, glm::vec3(scale_x, scale_x, 1.0f));
+        size_t offset = 0;
+        size_t prev_offset;
+        view = glm::lookAt(camera_position, look_position, glm::vec3(0.0f, 1.0f, 0.0f));
 
-        SetUniformMat4(basic_shader, "uProjection", projection);
+        float scale_x = camera_position.z * tan(glm::radians(Fov));
+        float scale_y = scale_x / Aspect_Ratio;
+
+        prev_offset = PushData(graph_array.size(), graph_array.data(), offset);
+        model = glm::mat4(1.0f);
+        SetUniformMat4(basic_shader, "uModel", model);
         SetUniformMat4(basic_shader, "uView", view);
-        SetUniformMat4(basic_shader, "uModel", model);
-        SetUniformVec4(basic_shader, "uColor", glm::vec4(0.5f, 0.5f, 0.5f, 1.0f));
-        glDrawArrays(GL_LINES, 0, 2);
+        SetUniformMat4(basic_shader, "uProjection", projection);
+        SetUniformVec4(basic_shader, "uColor", glm::vec4(0.5f, 1.0f, 0.4f, 1.0f));
+        glDrawArrays(GL_LINE_STRIP, prev_offset, graph_array.size());
 
-        float iter = 1.0f + look_position.x + X_Offset;
-        while (iter < scale_x)
-        {
-            model = glm::mat4(1.0f);
-            model = glm::translate(model, glm::vec3(iter, Y_Offset, 0.0f));
-            model = glm::scale(model, glm::vec3(1.0f, 0.1f, 1.0f));
-
-            SetUniformMat4(basic_shader, "uModel", model);
-            glDrawArrays(GL_LINES, 2, 2);
-
-            iter += 1.0f;
-        }
-
-        iter = 1.0f + look_position.x + X_Offset;
-        while (iter > -scale_x)
-        {
-            model = glm::mat4(1.0f);
-            model = glm::translate(model, glm::vec3(iter, Y_Offset, 0.0f));
-            model = glm::scale(model, glm::vec3(1.0f, 0.1f, 1.0f));
-
-            SetUniformMat4(basic_shader, "uModel", model);
-            glDrawArrays(GL_LINES, 2, 2);
-
-            iter -= 1.0f;
-        }
-
-        // Draw Y axis
+        prev_offset = PushData(2, reinterpret_cast<Vertex*>(&x), offset);
         model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(X_Offset, 0.0f, 0.0f));
-        model = glm::scale(model, glm::vec3(scale_y, scale_y, 1.0f));
-
+        model = glm::translate(model, glm::vec3(camera_position.x, 0.0f, 0.0f));
+        model = glm::scale(model, glm::vec3(scale_x, 1.0f, 1.0f));
         SetUniformMat4(basic_shader, "uModel", model);
-        glDrawArrays(GL_LINES, 2, 2);
+        SetUniformVec4(basic_shader, "uColor", glm::vec4(0.7f));
+        glDrawArrays(GL_LINES, prev_offset, 2);
 
-        iter = 1.0f + look_position.y + Y_Offset;
-        while (iter < scale_y)
-        {
-            model = glm::mat4(1.0f);
-            model = glm::translate(model, glm::vec3(X_Offset, iter, 0.0f));
-            model = glm::scale(model, glm::vec3(0.1f, 1.0f, 1.0f));
-
-            SetUniformMat4(basic_shader, "uModel", model);
-            glDrawArrays(GL_LINES, 0, 2);
-
-            iter += 1.0f;
-        }
-
-        iter = 1.0f + look_position.y + Y_Offset;
-        while (iter > -scale_y)
-        {
-            model = glm::mat4(1.0f);
-            model = glm::translate(model, glm::vec3(X_Offset, iter, 0.0f));
-            model = glm::scale(model, glm::vec3(0.1f, 1.0f, 1.0f));
-
-            SetUniformMat4(basic_shader, "uModel", model);
-            glDrawArrays(GL_LINES, 0, 2);
-
-            iter -= 1.0f;
-        }
-
-        BindVertexArray(graph_vao);
-
-        // Draw graph
+        prev_offset = PushData(2, reinterpret_cast<Vertex*>(&y), offset);
         model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(X_Offset, Y_Offset, 0.0f));
+        model = glm::translate(model, glm::vec3(0.0f, camera_position.y, 0.0f));
+        model = glm::scale(model, glm::vec3(1.0f, scale_y, 1.0f));
         SetUniformMat4(basic_shader, "uModel", model);
-        SetUniformVec4(basic_shader, "uColor", glm::vec4(0.0, 0.7, 0.3, 1.0f));
+        glDrawArrays(GL_LINES, prev_offset, 2);
 
-        glDrawArrays(GL_LINE_STRIP, 0, graph_array.size());
+        Line line = {glm::vec2(1.0f, 0.1f), glm::vec2(1.0f, -0.1f)};
+        float current_position_x = plot_origin.x;
+        while (current_position_x < camera_position.x + scale_x)
+        {
+            prev_offset = PushData(2, reinterpret_cast<Vertex*>(&line), offset);
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(current_position_x, 0.0f, 0.0f));
+            if (fabs(camera_position.y) > scale_y)
+            {
+                const float& camera_y = camera_position.y;
+                model = glm::translate(model, glm::vec3(0.0f, camera_y - Normalize(camera_y) * scale_y, 0.0f));
+            }
+            SetUniformMat4(basic_shader, "uModel", model);
+            
+            current_position_x += 1.0f;
+            glDrawArrays(GL_LINES, prev_offset, 2);
+        }
+
+        line = {glm::vec2(-1.0f, 0.1f), glm::vec2(-1.0f, -0.1f)};
+        current_position_x = plot_origin.x;
+        while (current_position_x > camera_position.x - scale_x)
+        {
+            prev_offset = PushData(2, reinterpret_cast<Vertex*>(&line), offset);
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(current_position_x, 0.0f, 0.0f));
+            if (fabs(camera_position.y) > scale_y)
+            {
+                const float& camera_y = camera_position.y;
+                model = glm::translate(model, glm::vec3(0.0f, camera_y - Normalize(camera_y) * scale_y, 0.0f));
+            }
+            SetUniformMat4(basic_shader, "uModel", model);
+
+            current_position_x -= 1.0f;
+            glDrawArrays(GL_LINES, prev_offset, 2);
+        }
+
+        line = {glm::vec2(0.1f, 1.0f), glm::vec2(-0.1f, 1.0f)};
+        float current_position_y = plot_origin.y;
+        while (current_position_y < camera_position.y + scale_y)
+        {
+            prev_offset = PushData(2, reinterpret_cast<Vertex*>(&line), offset);
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(0.0f, current_position_y, 0.0f));
+            if (fabs(camera_position.x) > scale_x)
+            {
+                const float& camera_x = camera_position.x;
+                model = glm::translate(model, glm::vec3(camera_x - Normalize(camera_x) * scale_x, 0.0f, 0.0f));
+            }
+            SetUniformMat4(basic_shader, "uModel", model);
+
+            current_position_y += 1.0f;
+            glDrawArrays(GL_LINES, prev_offset, 2);
+        }
+
+        line = {glm::vec2(0.1f, -1.0f), glm::vec2(-0.1f, -1.0f)};
+        current_position_y = plot_origin.y;
+        while (current_position_y > camera_position.y - scale_y)
+        {
+            prev_offset = PushData(2, reinterpret_cast<Vertex*>(&line), offset);
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(0.0f, current_position_y, 0.0f));
+            if (fabs(camera_position.x) > scale_x)
+            {
+                const float& camera_x = camera_position.x;
+                model = glm::translate(model, glm::vec3(camera_x - Normalize(camera_x) * scale_x, 0.0f, 0.0f));
+            }
+            SetUniformMat4(basic_shader, "uModel", model);
+
+            current_position_y -= 1.0f;
+            glDrawArrays(GL_LINES, prev_offset, 2);
+        }
 
         // Swap buffers with each other and listen for the incoming events, add those to event queue
         glfwSwapBuffers(Window);
@@ -248,13 +260,11 @@ int main()
         glfwGetWindowSize(Window, &Width, &Height);
         glViewport(0, 0, Width, Height);
 
-        // Update values each frame
-        // TODO replace with resize window callback
         Aspect_Ratio = static_cast<float>(Width) / Height;
-        // internal_width = internal_height * Aspect_Ratio;
-
-        camera_position = glm::vec3(0.0f, 0.0f, Magnification);
+        camera_position = glm::vec3(X_Offset, Y_Offset, Magnification);
+        look_position = glm::vec3(X_Offset, Y_Offset, 0.0f);
         camera_direction = look_position - camera_position;
+        to_origin = plot_origin - camera_position;
     }
 
     glfwTerminate();
@@ -262,6 +272,14 @@ int main()
 }
 
 // FUCNTION INITIALIZATIONS
+size_t PushData(size_t count, Vertex* data, size_t& offset)
+{
+    glBufferSubData(GL_ARRAY_BUFFER, static_cast<GLintptr>(sizeof(Vertex) * offset), sizeof(Vertex) * count, reinterpret_cast<void*>(data));
+    size_t prev_offset = offset;
+    offset += count;
+    return prev_offset;
+}
+
 void GLFWKeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
     if (key == GLFW_KEY_ESCAPE and action == GLFW_RELEASE)
@@ -289,22 +307,26 @@ void FrameKeyCallback(GLFWwindow* window)
     int w_state = glfwGetKey(window, GLFW_KEY_W);
     if (w_state == GLFW_PRESS)
     {
-        Y_Offset -= 0.1f * Magnification / 10.0f;
+        // Y_Offset -= 0.1f * Magnification / 10.0f;
+        Y_Offset += 0.2f * Magnification / 10.0f;
     }
     int a_state = glfwGetKey(window, GLFW_KEY_A);
     if (a_state == GLFW_PRESS)
     {
-        X_Offset += 0.1f * Magnification / 10.0f;
+        // X_Offset += 0.1f * Magnification / 10.0f;
+        X_Offset -= 0.2f * Magnification / 10.0f;
     }
     int s_state = glfwGetKey(window, GLFW_KEY_S);
     if (s_state == GLFW_PRESS)
     {
-        Y_Offset += 0.1f * Magnification / 10.0f;
+        // Y_Offset += 0.1f * Magnification / 10.0f;
+        Y_Offset -= 0.2f * Magnification / 10.0f;
     }
     int d_state = glfwGetKey(window, GLFW_KEY_D);
     if (d_state == GLFW_PRESS)
     {
-        X_Offset -= 0.1f * Magnification / 10.0f;
+        // X_Offset -= 0.1f * Magnification / 10.0f;
+        X_Offset += 0.2f * Magnification / 10.0f;
     }
 }
 
@@ -409,9 +431,9 @@ void BindVertexArray(unsigned int vao)
 
 constexpr float Function(float x)
 {
-    return fabs(sin(x)) + fabs(cos(x));
+    // return fabs(sin(x)) + fabs(cos(x));
     // return x*x;
-    // return sin(x);
+    return sin(x);
 }
 
 float GetFunctionExtremum(float(*func)(float), float left, float right)
