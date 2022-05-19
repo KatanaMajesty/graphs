@@ -3,22 +3,14 @@ project(lab17_ap CXX)
 
 add_subdirectory("./dependencies/")
 find_package(GLEW REQUIRED)
-find_package(Freetype REQUIRED)
 
-file(GLOB_RECURSE
-    GL_FONT "./dependencies/glfont/src/"
-)
-
-add_executable(${PROJECT_NAME} Application.cpp ${GL_FONT})
+add_executable(${PROJECT_NAME} Application.cpp)
 target_include_directories(${PROJECT_NAME}
-    PUBLIC "dependencies/freetype-gl-cpp/"
     PUBLIC "${GLEW_INCLUDE_DIRS}"
-    PUBLIC "${FREETYPE_INCLUDE_DIRS}"
     .
 )
 target_link_libraries(${PROJECT_NAME}
-    freetype-gl-cpp
-    ${FREETYPE_LIBRARIES}
+    IMGUI
     glfw
     GLEW::GLEW
     glm::glm

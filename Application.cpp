@@ -1,4 +1,6 @@
-#include <freetype-gl-cpp.h>
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_opengl3.h"
 
 #define LOG(logLevel, message) std::cout << #logLevel << ": " << message << std::endl
 #define PRECISION 2000
@@ -14,6 +16,11 @@ enum LogLevel
 struct Vertex
 {
     glm::vec2 position;
+};
+
+struct Point
+{
+    glm::vec2 xy;
 };
 
 struct Line
@@ -32,7 +39,7 @@ void            SetUniformVec4(     unsigned int program, const char* name, cons
 void            BindShaderProgram(  unsigned int program);
 void            BindVertexArray(    unsigned int vao);
 size_t          PushData(           size_t count, Vertex* data, size_t& offset);
-float Normalize(float x) { return x / fabs(x); }
+float           Normalize(           float x) { return x / fabs(x); }
 // Function
 constexpr float Function(float x);
 float GetFunctionExtremum(float(*func)(float), float left, float right);
@@ -50,15 +57,15 @@ int Height = 720;
 
 float Aspect_Ratio = static_cast<float>(Width) / Height;
 
-constexpr float Left_Border = -5.0f;
-constexpr float Right_Border = 5.0f; 
+constexpr float Left_Border = -8.0f;
+constexpr float Right_Border = 2.0f; 
 constexpr float Fov = 45.0f;
 constexpr size_t Data_Size = PRECISION + 256;
 
 float internal_height = GetFunctionExtremum(Function, Left_Border, Right_Border);
-float Magnification = internal_height / tan(glm::radians(Fov)) * Aspect_Ratio + 0.1f;
+float Magnification = internal_height / tan(glm::radians(Fov / 2.0f)) + 0.1f;
 
-float X_Offset = 0.0f;
+float X_Offset = (Left_Border + Right_Border) / 2.0f;
 float Y_Offset = 0.0f;
 
 int main()
@@ -93,6 +100,19 @@ int main()
     glfwSetKeyCallback(Window, GLFWKeyCallback);
     glfwSwapInterval(1);
 
+    // Setup Dear ImGui context
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
+
+    ImGui::StyleColorsDark();
+
+    // Setup Platform/Renderer backends
+    ImGui_ImplGlfw_InitForOpenGL(Window, true);
+    ImGui_ImplOpenGL3_Init("#version 130");
+
     std::array<Vertex, PRECISION> graph_array;
     // float x = Left_Border;
     float delta = (fabs(Left_Border) + fabs(Right_Border)) / graph_array.size();
@@ -103,13 +123,6 @@ int main()
     });
 
     // OPENGL DATA
-
-    FreetypeGl text_renderer(true);
-    text_renderer.setProjectionPresp(Fov, Aspect_Ratio, 0.1f, 1000.0f);
-    FreetypeGlText text = text_renderer.createText(std::string("Static text (faster)"));
-    text.setScalingFactor(2);
-
-
     unsigned int vao;
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
@@ -124,18 +137,22 @@ int main()
 
     unsigned int basic_shader = CreateShaderProgram("BasicShader");
 
-    glm::vec3 camera_position = glm::vec3(0.0f, 0.0f, Magnification);
-    glm::vec3 look_position = glm::vec3(0.0f);
-    glm::vec3 plot_origin = glm::vec3(0.0f);
+    glm::vec3 camera_position(0.0f, 0.0f, Magnification);
+    glm::vec3 look_position(0.0f);
+    glm::vec3 plot_origin(0.0f);
     glm::vec3 camera_direction = look_position - camera_position;
     glm::vec3 to_origin = plot_origin - camera_position;
 
-    glm::mat4 projection = glm::perspective(Fov, Aspect_Ratio, 0.1f, 1000.0f);
+    glm::mat4 projection = glm::perspective(glm::radians(Fov), Aspect_Ratio, 0.1f, 1000.0f);
     glm::mat4 view(1.0f);
     glm::mat4 model(1.0f);
 
-    Line x = {glm::vec2(-1.0f, 0.0f), glm::vec2(1.0f, 0.0f)};
-    Line y = {glm::vec2(0.0f, 1.0), glm::vec2(0.0f, -1.0f)};
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_BLEND);
+
+    Line x = { glm::vec2(-1.0f, 0.0f), glm::vec2(1.0f, 0.0f) };
+    Line y = { glm::vec2(0.0f, 1.0), glm::vec2(0.0f, -1.0f) };
+    glm::vec<2, double> cursor_pos;
 
     // RENDER LOOP
     while (!glfwWindowShouldClose(Window))
@@ -147,7 +164,7 @@ int main()
 
         FrameKeyCallback(Window);
 
-        text_renderer.renderText(text);
+        glfwGetCursorPos(Window, &cursor_pos.x, &cursor_pos.y);
 
         BindVertexArray(vao);
         BindShaderProgram(basic_shader);
@@ -156,8 +173,8 @@ int main()
         size_t prev_offset;
         view = glm::lookAt(camera_position, look_position, glm::vec3(0.0f, 1.0f, 0.0f));
 
-        float scale_x = camera_position.z * tan(glm::radians(Fov));
-        float scale_y = scale_x / Aspect_Ratio;
+        float scale_y = camera_position.z * tan(glm::radians(Fov / 2.0f));
+        float scale_x = scale_y * Aspect_Ratio;
 
         prev_offset = PushData(graph_array.size(), graph_array.data(), offset);
         model = glm::mat4(1.0f);
@@ -254,9 +271,21 @@ int main()
             glDrawArrays(GL_LINES, prev_offset, 2);
         }
 
-        // Swap buffers with each other and listen for the incoming events, add those to event queue
-        glfwSwapBuffers(Window);
         glfwPollEvents();
+
+        // Start the Dear ImGui frame
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+
+        ImGui::Begin("Graph 2D Plotter");
+        ImGui::Text("Cursor position = (X: %lf, Y: %lf)", 
+            X_Offset + (cursor_pos.x - (Width / 2.0f)) / (Width / 2.0f) * scale_x, 
+            Y_Offset + (-cursor_pos.y + (Height / 2.0f)) / (Height / 2.0f) * scale_y
+        );
+        ImGui::End();
+
+        ImGui::Render();
         glfwGetWindowSize(Window, &Width, &Height);
         glViewport(0, 0, Width, Height);
 
@@ -265,6 +294,11 @@ int main()
         look_position = glm::vec3(X_Offset, Y_Offset, 0.0f);
         camera_direction = look_position - camera_position;
         to_origin = plot_origin - camera_position;
+
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+        // Swap buffers with each other and listen for the incoming events, add those to event queue
+        glfwSwapBuffers(Window);
     }
 
     glfwTerminate();
@@ -431,9 +465,9 @@ void BindVertexArray(unsigned int vao)
 
 constexpr float Function(float x)
 {
-    // return fabs(sin(x)) + fabs(cos(x));
+    return fabs(sin(x)) + fabs(cos(x));
     // return x*x;
-    return sin(x);
+    // return sin(x);
 }
 
 float GetFunctionExtremum(float(*func)(float), float left, float right)
