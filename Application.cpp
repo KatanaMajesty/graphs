@@ -2,71 +2,44 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 
-#define LOG(logLevel, message) std::cout << #logLevel << ": " << message << std::endl
 #define PRECISION 2000
+#define LOG(logLevel, message) std::cout << #logLevel << ": " << message << std::endl
 
-enum LogLevel
-{
-    INFO,
-    DEBUG,
-    CRITICAL
-};
+enum LogLevel { INFO, DEBUG, CRITICAL };
+struct Vertex { glm::vec4 position; };
+struct Line { Vertex p1, p2; };
 
-// STRUCT / CLASS DECLARATIONS
-struct Vertex
-{
-    glm::vec2 position;
-};
+// Function declarations
+constexpr float             Function            (float x);
+constexpr float             Normalize           (float x) { return x / fabs(x); }
+std::pair<float, float>     GetFunctionExtremum (float(*func)(float), float left, float right);
+void                        GLFWKeyCallback     (GLFWwindow* window, int key, int scancode, int action, int mods);
+void                        GLFWScrollCallback  (GLFWwindow* window, double xoffset, double yoffset);
+void                        FrameKeyCallback    (GLFWwindow* window);
+void                        ImGuiInitialize     (GLFWwindow* window);
+unsigned int                CreateShaderProgram (const std::string& shader_name);
+void                        SetUniformMat4      (unsigned int program, const char* name, const glm::mat4& mat);
+void                        SetUniformVec4      (unsigned int program, const char* name, const glm::vec4& vec);
+size_t                      PushData            (size_t count, Vertex* data, size_t& offset);
 
-struct Point
-{
-    glm::vec2 xy;
-};
-
-struct Line
-{
-    Vertex p1;
-    Vertex p2;
-};
-
-// FUCNTION DECLARATIONS
-void            GLFWKeyCallback(    GLFWwindow* window, int key, int scancode, int action, int mods);
-void            GLFWScrollCallback( GLFWwindow* window, double xoffset, double yoffset);
-void            FrameKeyCallback(   GLFWwindow* window);
-unsigned int    CreateShaderProgram(const std::string& shader_name);
-void            SetUniformMat4(     unsigned int program, const char* name, const glm::mat4& mat);
-void            SetUniformVec4(     unsigned int program, const char* name, const glm::vec4& vec);          
-void            BindShaderProgram(  unsigned int program);
-void            BindVertexArray(    unsigned int vao);
-size_t          PushData(           size_t count, Vertex* data, size_t& offset);
-float           Normalize(           float x) { return x / fabs(x); }
-// Function
-constexpr float Function(float x);
-float GetFunctionExtremum(float(*func)(float), float left, float right);
-
-std::ostream& operator<<(std::ostream& stream, const glm::vec3& vec)
-{
-    stream << vec.x << ", " << vec.y << ", " << vec.z;
-    return stream;
-}
-
-// GLOBAL VARIABLES
+// Global variables
 GLFWwindow* Window = nullptr;
 int Width = 1280;
 int Height = 720;
 
 float Aspect_Ratio = static_cast<float>(Width) / Height;
 
-constexpr float Left_Border = -8.0f;
-constexpr float Right_Border = 2.0f; 
+constexpr float Left_Border = -20.0f;
+constexpr float Right_Border = 5.0f; 
 constexpr float Fov = 45.0f;
 constexpr size_t Data_Size = PRECISION + 256;
 
-float internal_height = GetFunctionExtremum(Function, Left_Border, Right_Border);
-float Magnification = internal_height / tan(glm::radians(Fov / 2.0f)) + 0.1f;
+std::pair<float, float> Extremum = GetFunctionExtremum(Function, Left_Border, Right_Border);
+const float internal_height = Extremum.second;
+float Magnification = fabs(internal_height) / tan(glm::radians(Fov / 2.0f)) + 0.1f;
 
 float X_Offset = (Left_Border + Right_Border) / 2.0f;
-float Y_Offset = 0.0f;
+float Y_Offset = (Extremum.first + Extremum.second) / 2.0f;
 
 int main()
 {
@@ -83,7 +56,7 @@ int main()
         return -1;
     }
 
-    // GLFW AND OPENGL CONTEXT STUFF
+    // context
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
@@ -95,34 +68,22 @@ int main()
         return -1;
     }
 
-    // GLFW CALLBACKS & STUFF
+    // glfw callbacks
     glfwSetScrollCallback(Window, GLFWScrollCallback);
     glfwSetKeyCallback(Window, GLFWKeyCallback);
     glfwSwapInterval(1);
 
-    // Setup Dear ImGui context
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
-
-    ImGui::StyleColorsDark();
-
-    // Setup Platform/Renderer backends
-    ImGui_ImplGlfw_InitForOpenGL(Window, true);
-    ImGui_ImplOpenGL3_Init("#version 130");
+    ImGuiInitialize(Window);
 
     std::array<Vertex, PRECISION> graph_array;
-    // float x = Left_Border;
-    float delta = (fabs(Left_Border) + fabs(Right_Border)) / graph_array.size();
+    float delta = (fabs(Left_Border - Right_Border)) / graph_array.size();
     std::generate(graph_array.begin(), graph_array.end(), [&, x = Left_Border]() mutable -> Vertex {
         float y = Function(x);
         x += delta;
-        return {glm::vec2(x, y)};
+        return { glm::vec4(x, y, 0.0f, 1.0f) };
     });
 
-    // OPENGL DATA
+    // OpenGL data
     unsigned int vao;
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
@@ -147,18 +108,14 @@ int main()
     glm::mat4 view(1.0f);
     glm::mat4 model(1.0f);
 
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glEnable(GL_BLEND);
-
-    Line x = { glm::vec2(-1.0f, 0.0f), glm::vec2(1.0f, 0.0f) };
-    Line y = { glm::vec2(0.0f, 1.0), glm::vec2(0.0f, -1.0f) };
+    Line x = { glm::vec4(-1.0f, 0.0f, 0.0f, 1.0f), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) };
+    Line y = { glm::vec4(0.0f, 1.0f, 0.0f, 1.0f), glm::vec4(0.0f, -1.0f, 0.0f, 1.0f) };
     glm::vec<2, double> cursor_pos;
 
-    // RENDER LOOP
+    // Render loop
     while (!glfwWindowShouldClose(Window))
     {
         // Clear color to draw next frame without artifacts from the previous
-        // Main render stuff starts here
         glClear(GL_COLOR_BUFFER_BIT);
         glClearColor(0.12f, 0.12f, 0.12f, 1.0f);
 
@@ -166,8 +123,8 @@ int main()
 
         glfwGetCursorPos(Window, &cursor_pos.x, &cursor_pos.y);
 
-        BindVertexArray(vao);
-        BindShaderProgram(basic_shader);
+        glBindVertexArray(vao);
+        glUseProgram(basic_shader);
 
         size_t offset = 0;
         size_t prev_offset;
@@ -199,79 +156,109 @@ int main()
         SetUniformMat4(basic_shader, "uModel", model);
         glDrawArrays(GL_LINES, prev_offset, 2);
 
-        Line line = {glm::vec2(1.0f, 0.1f), glm::vec2(1.0f, -0.1f)};
         float current_position_x = plot_origin.x;
-        while (current_position_x < camera_position.x + scale_x)
+        size_t current_size = 0;
+        bool is_first = true;
+        while (current_position_x - 1.0f < camera_position.x + scale_x)
         {
-            prev_offset = PushData(2, reinterpret_cast<Vertex*>(&line), offset);
-            model = glm::mat4(1.0f);
-            model = glm::translate(model, glm::vec3(current_position_x, 0.0f, 0.0f));
-            if (fabs(camera_position.y) > scale_y)
+            Line line {
+                glm::vec4(current_position_x, 0.1f, 0.0f, 1.0f), 
+                glm::vec4(current_position_x, -0.1f, 0.0f, 1.0f)
+            };
+            size_t current_offset = PushData(2, reinterpret_cast<Vertex*>(&line), offset);
+            if (is_first)
             {
-                const float& camera_y = camera_position.y;
-                model = glm::translate(model, glm::vec3(0.0f, camera_y - Normalize(camera_y) * scale_y, 0.0f));
+                prev_offset = current_offset;
+                is_first = false;
             }
-            SetUniformMat4(basic_shader, "uModel", model);
-            
+            current_size += 2;
             current_position_x += 1.0f;
-            glDrawArrays(GL_LINES, prev_offset, 2);
         }
+        model = glm::mat4(1.0f);
+        if (fabs(camera_position.y) > scale_y)
+        {
+            model = glm::translate(model, glm::vec3(0.0f, camera_position.y - Normalize(camera_position.y) * scale_y, 0.0f));
+        }
+        SetUniformMat4(basic_shader, "uModel", model);
+        glDrawArrays(GL_LINES, prev_offset, current_size);
 
-        line = {glm::vec2(-1.0f, 0.1f), glm::vec2(-1.0f, -0.1f)};
         current_position_x = plot_origin.x;
+        current_size = 0;
+        is_first = true;
         while (current_position_x > camera_position.x - scale_x)
         {
-            prev_offset = PushData(2, reinterpret_cast<Vertex*>(&line), offset);
-            model = glm::mat4(1.0f);
-            model = glm::translate(model, glm::vec3(current_position_x, 0.0f, 0.0f));
-            if (fabs(camera_position.y) > scale_y)
+            Line line {
+                glm::vec4(current_position_x, 0.1f, 0.0f, 1.0f), 
+                glm::vec4(current_position_x, -0.1f, 0.0f, 1.0f)
+            };
+            size_t current_offset = PushData(2, reinterpret_cast<Vertex*>(&line), offset);
+            if (is_first)
             {
-                const float& camera_y = camera_position.y;
-                model = glm::translate(model, glm::vec3(0.0f, camera_y - Normalize(camera_y) * scale_y, 0.0f));
+                prev_offset = current_offset;
+                is_first = false;
             }
-            SetUniformMat4(basic_shader, "uModel", model);
-
+            current_size += 2;
             current_position_x -= 1.0f;
-            glDrawArrays(GL_LINES, prev_offset, 2);
         }
+        model = glm::mat4(1.0f);
+        if (fabs(camera_position.y) > scale_y)
+        {
+            model = glm::translate(model, glm::vec3(0.0f, camera_position.y - Normalize(camera_position.y) * scale_y, 0.0f));
+        }
+        SetUniformMat4(basic_shader, "uModel", model);
+        glDrawArrays(GL_LINES, prev_offset, current_size);
 
-        line = {glm::vec2(0.1f, 1.0f), glm::vec2(-0.1f, 1.0f)};
         float current_position_y = plot_origin.y;
+        current_size = 0;
+        is_first = true;
         while (current_position_y < camera_position.y + scale_y)
         {
-            prev_offset = PushData(2, reinterpret_cast<Vertex*>(&line), offset);
-            model = glm::mat4(1.0f);
-            model = glm::translate(model, glm::vec3(0.0f, current_position_y, 0.0f));
-            if (fabs(camera_position.x) > scale_x)
+            Line line {
+                glm::vec4(0.1f, current_position_y, 0.0f, 1.0f), 
+                glm::vec4(-0.1f, current_position_y, 0.0f, 1.0f)
+            };
+            size_t current_offset = PushData(2, reinterpret_cast<Vertex*>(&line), offset);
+            if (is_first)
             {
-                const float& camera_x = camera_position.x;
-                model = glm::translate(model, glm::vec3(camera_x - Normalize(camera_x) * scale_x, 0.0f, 0.0f));
+                prev_offset = current_offset;
+                is_first = false;
             }
-            SetUniformMat4(basic_shader, "uModel", model);
-
             current_position_y += 1.0f;
-            glDrawArrays(GL_LINES, prev_offset, 2);
+            current_size += 2;
         }
+        model = glm::mat4(1.0f);
+        if (fabs(camera_position.x) > scale_x)
+        {
+            model = glm::translate(model, glm::vec3(camera_position.x - Normalize(camera_position.x) * scale_x, 0.0f, 0.0f));
+        }
+        SetUniformMat4(basic_shader, "uModel", model);
+        glDrawArrays(GL_LINES, prev_offset, current_size);
 
-        line = {glm::vec2(0.1f, -1.0f), glm::vec2(-0.1f, -1.0f)};
         current_position_y = plot_origin.y;
+        current_size = 0;
+        is_first = true;
         while (current_position_y > camera_position.y - scale_y)
         {
-            prev_offset = PushData(2, reinterpret_cast<Vertex*>(&line), offset);
-            model = glm::mat4(1.0f);
-            model = glm::translate(model, glm::vec3(0.0f, current_position_y, 0.0f));
-            if (fabs(camera_position.x) > scale_x)
+            Line line {
+                glm::vec4(0.1f, current_position_y, 0.0f, 1.0f), 
+                glm::vec4(-0.1f, current_position_y, 0.0f, 1.0f)
+            };
+            size_t current_offset = PushData(2, reinterpret_cast<Vertex*>(&line), offset);
+            if (is_first)
             {
-                const float& camera_x = camera_position.x;
-                model = glm::translate(model, glm::vec3(camera_x - Normalize(camera_x) * scale_x, 0.0f, 0.0f));
+                prev_offset = current_offset;
+                is_first = false;
             }
-            SetUniformMat4(basic_shader, "uModel", model);
-
             current_position_y -= 1.0f;
-            glDrawArrays(GL_LINES, prev_offset, 2);
+            current_size += 2;
         }
-
-        glfwPollEvents();
+        model = glm::mat4(1.0f);
+        if (fabs(camera_position.x) > scale_x)
+        {
+            model = glm::translate(model, glm::vec3(camera_position.x - Normalize(camera_position.x) * scale_x, 0.0f, 0.0f));
+        }
+        SetUniformMat4(basic_shader, "uModel", model);
+        glDrawArrays(GL_LINES, prev_offset, current_size);
 
         // Start the Dear ImGui frame
         ImGui_ImplOpenGL3_NewFrame();
@@ -286,6 +273,9 @@ int main()
         ImGui::End();
 
         ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+        glfwPollEvents();
         glfwGetWindowSize(Window, &Width, &Height);
         glViewport(0, 0, Width, Height);
 
@@ -294,8 +284,6 @@ int main()
         look_position = glm::vec3(X_Offset, Y_Offset, 0.0f);
         camera_direction = look_position - camera_position;
         to_origin = plot_origin - camera_position;
-
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         // Swap buffers with each other and listen for the incoming events, add those to event queue
         glfwSwapBuffers(Window);
@@ -310,7 +298,7 @@ size_t PushData(size_t count, Vertex* data, size_t& offset)
 {
     glBufferSubData(GL_ARRAY_BUFFER, static_cast<GLintptr>(sizeof(Vertex) * offset), sizeof(Vertex) * count, reinterpret_cast<void*>(data));
     size_t prev_offset = offset;
-    offset += count;
+    offset = (offset + count) % Data_Size;
     return prev_offset;
 }
 
@@ -326,7 +314,7 @@ void GLFWScrollCallback(GLFWwindow* window, double xoffset, double yoffset)
 {
     if (yoffset == -1)
     {
-        if (Magnification < (internal_height * M_PI_2 * Aspect_Ratio) * 3.0f)
+        if (Magnification < (fabs(internal_height) * M_PI * Aspect_Ratio) * 3.0f)
             Magnification += 0.05f * (Magnification);
     }
     else if (yoffset == 1)
@@ -453,28 +441,35 @@ void SetUniformVec4(unsigned int program, const char* name, const glm::vec4& vec
     glUniform4fv(glGetUniformLocation(program, name), 1, glm::value_ptr(vec));
 }      
 
-void BindShaderProgram(unsigned int program)
+void ImGuiInitialize(GLFWwindow* window)
 {
-    glUseProgram(program);
-}
+    // Setup Dear ImGui context
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
 
-void BindVertexArray(unsigned int vao)
-{
-    glBindVertexArray(vao);
+    ImGui::StyleColorsDark();
+
+    // Setup Platform/Renderer backends
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 130");
 }
 
 constexpr float Function(float x)
 {
-    return fabs(sin(x)) + fabs(cos(x));
+    // return fabs(sin(x)) + fabs(cos(x));
     // return x*x;
-    // return sin(x);
+    return sin(x) - 2.0f;
 }
 
-float GetFunctionExtremum(float(*func)(float), float left, float right)
+// Returns (min, max) pair
+std::pair<float, float> GetFunctionExtremum(float(*func)(float), float left, float right)
 {
     constexpr size_t precision = PRECISION;
-    float delta = (fabs(left) + fabs(right)) / precision;
-    float min = 0.0f, max = 0.0f;
+    float delta = (fabs(left - right)) / precision;
+    float min = right, max = left;
 
     for (; left < right; left += delta)
     {
@@ -485,5 +480,5 @@ float GetFunctionExtremum(float(*func)(float), float left, float right)
             min = y;
     }
 
-    return fabs(min) > fabs(max) ? min : max;
+    return std::make_pair(min, max);
 }
